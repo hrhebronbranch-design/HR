@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>نظام إدارة المتقدمين الأكاديميين</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="loginView" class="login-view">
+      <section class="login-panel" aria-labelledby="loginTitle">
+        <div>
+          <p class="eyebrow">شؤون الموظفين</p>
+          <h1 id="loginTitle">نظام إدارة المتقدمين الأكاديميين</h1>
+          <p class="muted">الدخول مخصص لموظفي شؤون الموظفين لمراجعة المتقدمين والبيانات الناقصة.</p>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label>
+            اسم المستخدم أو البريد
+            <input id="username" autocomplete="username" required />
+          </label>
+          <label>
+            كلمة المرور
+            <input id="password" type="password" autocomplete="current-password" required />
+          </label>
+          <p id="loginError" class="error-text" role="alert"></p>
+          <button type="submit">تسجيل الدخول</button>
+          <p class="hint">عند ربط Supabase يتم استخدام حسابات المستخدمين من Authentication.</p>
+        </form>
+      </section>
+    </main>
+
+    <main id="appView" class="app-view hidden">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">HR</span>
+          <div>
+            <strong>المتقدمون الأكاديميون</strong>
+            <small>قاعدة بيانات أولية</small>
+          </div>
+        </div>
+        <nav aria-label="القائمة الرئيسية">
+          <button class="nav-item active" data-view="dashboard">لوحة التحكم</button>
+          <button class="nav-item" data-view="applicants">المتقدمون</button>
+          <button class="nav-item" data-view="missing">مراجعة النواقص</button>
+          <button class="nav-item" data-view="specialties">مراجعة التخصصات</button>
+          <button class="nav-item" data-view="reports">التقارير</button>
+        </nav>
+        <button id="logoutBtn" class="logout-button">تسجيل الخروج</button>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">نسخة أولية</p>
+            <h2 id="pageTitle">لوحة التحكم</h2>
+          </div>
+          <div class="topbar-actions">
+            <span id="dataStatus" class="status-pill">تحميل البيانات</span>
+          </div>
+        </header>
+
+        <section id="dashboard" class="view active-view">
+          <div class="metrics-grid">
+            <article class="metric">
+              <span>إجمالي المتقدمين</span>
+              <strong id="totalApplicants">0</strong>
+            </article>
+            <article class="metric">
+              <span>فئات رئيسية</span>
+              <strong id="totalMainCategories">0</strong>
+            </article>
+            <article class="metric">
+              <span>بيانات ناقصة</span>
+              <strong id="totalMissing">0</strong>
+            </article>
+            <article class="metric">
+              <span>مراجعة تخصص</span>
+              <strong id="totalSpecialtyReview">0</strong>
+            </article>
+          </div>
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>توزيع الفئات الرئيسية</h3>
+              </div>
+              <div id="mainCategoryBars" class="bars"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>أكثر التخصصات عددًا</h3>
+              </div>
+              <div id="topSpecialties" class="compact-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="applicants" class="view">
+          <div class="filters">
+            <input id="searchInput" placeholder="بحث بالاسم أو الهوية أو الهاتف" />
+            <select id="mainCategoryFilter"></select>
+            <select id="subCategoryFilter"></select>
+            <select id="specialtyFilter"></select>
+            <select id="missingFilter">
+              <option value="">كل السجلات</option>
+              <option value="missing">بيانات ناقصة</option>
+              <option value="complete">بيانات مكتملة</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>الرقم</th>
+                  <th>الاسم</th>
+                  <th>الهوية</th>
+                  <th>الجوال</th>
+                  <th>الفئة الرئيسية</th>
+                  <th>الفئة الفرعية</th>
+                  <th>التخصص</th>
+                  <th>الجامعة</th>
+                  <th>سنة التخرج</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="applicantsTable"></tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span id="applicantCount">0 سجل</span>
+            <button id="exportFiltered">تصدير النتائج</button>
+          </div>
+        </section>
+
+        <section id="missing" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <h3>تقرير النواقص للموظف</h3>
+              <span id="missingCount" class="status-pill"></span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>الرقم</th>
+                    <th>الاسم</th>
+                    <th>الهوية</th>
+                    <th>التخصص</th>
+                    <th>الحقول الناقصة</th>
+                    <th>المصدر</th>
+                  </tr>
+                </thead>
+                <tbody id="missingTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="specialties" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <h3>مراجعة اختلاف التخصصات</h3>
+              <span id="specialtyReviewCount" class="status-pill"></span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>الشيت الأصلي</th>
+                    <th>الصف</th>
+                    <th>الاسم</th>
+                    <th>التخصص المكتوب</th>
+                    <th>التخصص المقترح</th>
+                  </tr>
+                </thead>
+                <tbody id="specialtyReviewTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="reports" class="view">
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>ملخص الفئات الرئيسية</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>الفئة الرئيسية</th>
+                      <th>عدد المتقدمين</th>
+                      <th>الفئات الفرعية</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mainCategoryTable"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>ملخص الفئات الفرعية</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>الفئة الرئيسية</th>
+                      <th>الفئة الفرعية</th>
+                      <th>عدد المتقدمين</th>
+                    </tr>
+                  </thead>
+                  <tbody id="subCategoryTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
