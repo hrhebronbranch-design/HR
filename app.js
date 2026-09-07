@@ -18,6 +18,21 @@ const credentials = {
   password: "admin123",
 };
 
+let supabaseClient = null;
+
+function getSupabaseClient() {
+  const config = window.HR_CONFIG || {};
+  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return null;
+  if (!supabaseClient) {
+    supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  }
+  return supabaseClient;
+}
+
+function isSupabaseEnabled() {
+  return Boolean(getSupabaseClient());
+}
+
 const pageTitles = {
   dashboard: "لوحة التحكم",
   applicants: "المتقدمون",
@@ -132,6 +147,62 @@ function renderDashboard() {
 
 function hasMissing(row) {
   return Boolean(row.issue_flags && row.issue_flags.trim()) || !row.national_id || !row.mobile || !row.graduation_university || !row.graduation_year;
+}
+
+function buildMissingRows(applicants) {
+  const labels = [
+    ["full_name", "الاسم"],
+    ["national_id", "رقم الهوية"],
+    ["birth_date", "تاريخ الميلاد"],
+    ["graduation_university", "جامعة التخرج"],
+    ["graduation_year", "سنة التخرج"],
+    ["original_paper", "الورقة الأصلية"],
+  ];
+
+  return applicants
+    .map((row) => {
+      const missing = labels.filter(([key]) => !row[key]).map(([, label]) => label);
+      if (!row.mobile && !row.phone) missing.push("الهاتف/الجوال");
+      return {
+        new_number: row.new_number,
+        full_name: row.full_name,
+        national_id: row.national_id,
+        approved_specialty: row.approved_specialty,
+        missing_fields: missing.join("; "),
+        missing_count: missing.length,
+        source_sheet: row.source_sheet,
+        source_row: row.source_row,
+      };
+    })
+    .filter((row) => row.missing_count > 0);
+}
+
+function buildSpecialtyReviewRows(applicants) {
+  return applicants
+    .filter((row) => row.specialty_review_status && row.specialty_review_status !== "مطابق")
+    .map((row) => ({
+      source_sheet: row.source_sheet,
+      source_row: row.source_row,
+      full_name: row.full_name,
+      specialty_text: row.specialty_text,
+      suggested_specialty: row.approved_specialty,
+    }));
+}
+
+function buildMainSummary(applicants) {
+  const grouped = applicants.reduce((acc, row) => {
+    acc[row.main_category] ||= { main_category: row.main_category, applicants: 0, subCategories: new Set() };
+    acc[row.main_category].applicants++;
+    acc[row.main_category].subCategories.add(row.sub_category);
+    return acc;
+  }, {});
+  return Object.values(grouped)
+    .map((row) => ({
+      main_category: row.main_category,
+      applicants: row.applicants,
+      sub_categories: row.subCategories.size,
+    }))
+    .sort((a, b) => b.applicants - a.applicants);
 }
 
 function applyApplicantFilters() {
@@ -288,14 +359,27 @@ function exportFilteredApplicants() {
 
 async function loadData() {
   byId("dataStatus").textContent = "تحميل البيانات";
-  [state.applicants, state.missing, state.specialtyReview, state.mainSummary] = await Promise.all([
-    loadCsv(DATA_PATHS.applicants),
-    loadCsv(DATA_PATHS.missing),
-    loadCsv(DATA_PATHS.specialtyReview),
-    loadCsv(DATA_PATHS.mainSummary),
-  ]);
+  const client = getSupabaseClient();
+  if (client) {
+    const { data, error } = await client
+      .from("applicants")
+      .select("*")
+      .order("new_number", { ascending: true });
+    if (error) throw error;
+    state.applicants = data || [];
+    state.missing = buildMissingRows(state.applicants);
+    state.specialtyReview = buildSpecialtyReviewRows(state.applicants);
+    state.mainSummary = buildMainSummary(state.applicants);
+  } else {
+    [state.applicants, state.missing, state.specialtyReview, state.mainSummary] = await Promise.all([
+      loadCsv(DATA_PATHS.applicants),
+      loadCsv(DATA_PATHS.missing),
+      loadCsv(DATA_PATHS.specialtyReview),
+      loadCsv(DATA_PATHS.mainSummary),
+    ]);
+  }
   state.filteredApplicants = state.applicants;
-  byId("dataStatus").textContent = "البيانات جاهزة";
+  byId("dataStatus").textContent = client ? "متصل بـ Supabase" : "البيانات المحلية جاهزة";
   setupFilters();
   renderDashboard();
   renderApplicantsTable();
@@ -313,12 +397,35 @@ function showApp() {
 }
 
 function setupAuth() {
-  if (localStorage.getItem("hr_session") === "active") showApp();
+  const client = getSupabaseClient();
+  if (client) {
+    client.auth.getSession().then(({ data }) => {
+      if (data.session) showApp();
+    });
+  } else if (localStorage.getItem("hr_session") === "active") {
+    showApp();
+  }
 
-  byId("loginForm").addEventListener("submit", (event) => {
+  byId("loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const username = byId("username").value.trim();
     const password = byId("password").value;
+    const activeClient = getSupabaseClient();
+
+    if (activeClient) {
+      byId("loginError").textContent = "";
+      const { error } = await activeClient.auth.signInWithPassword({
+        email: username,
+        password,
+      });
+      if (!error) {
+        showApp();
+        return;
+      }
+      byId("loginError").textContent = "تعذر تسجيل الدخول. تأكد من البريد وكلمة المرور";
+      return;
+    }
+
     if (username === credentials.username && password === credentials.password) {
       localStorage.setItem("hr_session", "active");
       showApp();
@@ -327,7 +434,9 @@ function setupAuth() {
     byId("loginError").textContent = "اسم المستخدم أو كلمة المرور غير صحيحة";
   });
 
-  byId("logoutBtn").addEventListener("click", () => {
+  byId("logoutBtn").addEventListener("click", async () => {
+    const activeClient = getSupabaseClient();
+    if (activeClient) await activeClient.auth.signOut();
     localStorage.removeItem("hr_session");
     location.reload();
   });
