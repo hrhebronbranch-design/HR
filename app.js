@@ -58,7 +58,6 @@ const editableFields = [
   "graduation_year",
   "original_paper",
   "source_sheet",
-  "source_row",
   "application_status",
   "notes",
 ];
@@ -148,6 +147,10 @@ function fillSelect(select, label, values) {
   });
 }
 
+function refreshIcons() {
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function renderDashboard() {
   byId("totalApplicants").textContent = state.applicants.length.toLocaleString("ar");
   byId("totalMainCategories").textContent = uniqueValues(state.applicants, "main_category").length.toLocaleString("ar");
@@ -181,6 +184,7 @@ function renderDashboard() {
   byId("topSpecialties").innerHTML = specialtyCounts
     .map(([name, count]) => `<div class="list-row"><span>${name}</span><strong>${count}</strong></div>`)
     .join("");
+  refreshIcons();
 }
 
 function hasMissing(row) {
@@ -269,9 +273,10 @@ function renderApplicantsTable() {
   byId("applicantCount").textContent = `${state.filteredApplicants.length.toLocaleString("ar")} سجل`;
   byId("applicantsTable").innerHTML = rows
     .map((row) => {
-      const status = hasMissing(row)
+      const completeness = hasMissing(row)
         ? '<span class="badge warn">ناقص</span>'
         : '<span class="badge ok">مكتمل</span>';
+      const status = row.application_status || "جديد";
       return `
         <tr>
           <td>${escapeHtml(row.new_number)}</td>
@@ -283,12 +288,13 @@ function renderApplicantsTable() {
           <td>${escapeHtml(row.approved_specialty)}</td>
           <td>${escapeHtml(row.graduation_university || "")}</td>
           <td>${escapeHtml(row.graduation_year || "")}</td>
-          <td>${status}</td>
+          <td><span class="badge ok">${escapeHtml(status)}</span> ${completeness}</td>
           <td><button class="row-action" type="button" data-open-applicant="${escapeHtml(row.id || row.new_number)}">استعراض</button></td>
         </tr>
       `;
     })
     .join("");
+  refreshIcons();
 }
 
 function renderMissing() {
@@ -303,11 +309,12 @@ function renderMissing() {
           <td>${escapeHtml(row.national_id || "")}</td>
           <td>${escapeHtml(row.approved_specialty)}</td>
           <td>${escapeHtml(row.missing_fields)}</td>
-          <td>${escapeHtml(row.source_sheet)} / ${escapeHtml(row.source_row)}</td>
+          <td>${escapeHtml(row.source_sheet)}</td>
         </tr>
       `
     )
     .join("");
+  refreshIcons();
 }
 
 function renderSpecialtyReview() {
@@ -318,7 +325,6 @@ function renderSpecialtyReview() {
       (row) => `
         <tr>
           <td>${escapeHtml(row.source_sheet)}</td>
-          <td>${escapeHtml(row.source_row)}</td>
           <td>${escapeHtml(row.full_name)}</td>
           <td>${escapeHtml(row.specialty_text)}</td>
           <td>${escapeHtml(row.suggested_specialty)}</td>
@@ -326,6 +332,7 @@ function renderSpecialtyReview() {
       `
     )
     .join("");
+  refreshIcons();
 }
 
 function renderReports() {
@@ -361,6 +368,7 @@ function renderReports() {
       `
     )
     .join("");
+  refreshIcons();
 }
 
 function setupFilters() {
@@ -396,6 +404,113 @@ function exportFilteredApplicants() {
   link.download = "filtered_applicants.csv";
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function getExportRows() {
+  return state.filteredApplicants.map((row) => ({
+    "الرقم": row.new_number || "",
+    "الاسم": row.full_name || "",
+    "رقم الهوية": row.national_id || "",
+    "الهاتف": row.phone || "",
+    "الجوال": row.mobile || "",
+    "الفئة الرئيسية": row.main_category || "",
+    "الفئة الفرعية": row.sub_category || "",
+    "التخصص": row.approved_specialty || "",
+    "الجامعة": row.graduation_university || "",
+    "سنة التخرج": row.graduation_year || "",
+    "حالة الطلب": row.application_status || "جديد",
+  }));
+}
+
+function exportXlsx() {
+  if (!window.XLSX) {
+    alert("تعذر تحميل أداة تصدير XLSX.");
+    return;
+  }
+  const rows = getExportRows();
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet(rows);
+  sheet["!cols"] = [
+    { wch: 8 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 26 }, { wch: 30 }, { wch: 26 }, { wch: 28 }, { wch: 12 }, { wch: 16 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, sheet, "المتقدمون");
+  XLSX.writeFile(workbook, "تقرير_المتقدمين.xlsx");
+}
+
+function exportPdf() {
+  const rows = getExportRows();
+  const report = window.open("", "_blank");
+  if (!report) {
+    alert("يرجى السماح بفتح النوافذ لتصدير PDF.");
+    return;
+  }
+  const tableRows = rows
+    .map((row) => `
+      <tr>
+        <td>${escapeHtml(row["الرقم"])}</td>
+        <td>${escapeHtml(row["الاسم"])}</td>
+        <td>${escapeHtml(row["رقم الهوية"])}</td>
+        <td>${escapeHtml(row["الجوال"] || row["الهاتف"])}</td>
+        <td>${escapeHtml(row["الفئة الرئيسية"])}</td>
+        <td>${escapeHtml(row["التخصص"])}</td>
+        <td>${escapeHtml(row["الجامعة"])}</td>
+        <td>${escapeHtml(row["حالة الطلب"])}</td>
+      </tr>
+    `)
+    .join("");
+
+  const logoUrl = `${location.origin}/assets/alquds-open-university-logo.jpg`;
+  report.document.write(`
+    <!doctype html>
+    <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="utf-8" />
+        <title>تقرير المتقدمين</title>
+        <style>
+          @import url("https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap");
+          @page { size: A4 landscape; margin: 14mm; }
+          body { font-family: "Cairo", Tahoma, Arial, sans-serif; color: #111827; margin: 0; }
+          header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #0f6f61; padding-bottom: 14px; margin-bottom: 18px; }
+          img { width: 72px; height: 72px; object-fit: contain; border-radius: 50%; }
+          h1 { margin: 0 0 8px; font-size: 24px; }
+          p { margin: 3px 0; color: #475467; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+          th, td { border: 1px solid #d7e0df; padding: 6px; text-align: right; vertical-align: top; }
+          th { background: #0f6f61; color: #fff; font-weight: 900; }
+          tr:nth-child(even) td { background: #f7fafc; }
+          .summary { display: flex; gap: 12px; margin-bottom: 14px; }
+          .box { border: 1px solid #d7e0df; border-radius: 8px; padding: 8px 12px; min-width: 140px; }
+          .box strong { display: block; font-size: 18px; color: #0f6f61; }
+        </style>
+      </head>
+      <body>
+        <header>
+          <div>
+            <h1>نظام إدارة المتقدمين الأكاديميين</h1>
+            <p>اسم الموظف: الاستاذ فراس أبو زينة</p>
+            <p>تصميم واعداد الموقع: الاستاذ احمد النتشة</p>
+          </div>
+          <img src="${logoUrl}" alt="شعار الجامعة" />
+        </header>
+        <section class="summary">
+          <div class="box"><span>عدد السجلات</span><strong>${rows.length}</strong></div>
+          <div class="box"><span>تاريخ التقرير</span><strong>${new Date().toLocaleDateString("ar")}</strong></div>
+        </section>
+        <table>
+          <thead>
+            <tr>
+              <th>الرقم</th><th>الاسم</th><th>الهوية</th><th>الجوال</th>
+              <th>الفئة</th><th>التخصص</th><th>الجامعة</th><th>الحالة</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <script>window.onload = () => setTimeout(() => window.print(), 300);</script>
+      </body>
+    </html>
+  `);
+  report.document.close();
 }
 
 function refreshDerivedData() {
@@ -453,7 +568,6 @@ function openApplicantModal(applicant = null) {
     graduation_year: "",
     original_paper: "",
     source_sheet: "إدخال يدوي",
-    source_row: "",
     application_status: "جديد",
     notes: "",
   };
@@ -491,7 +605,6 @@ function collectApplicantPayload() {
     payload[field] = toDbValue(input.value);
   });
   payload.new_number = Number(payload.new_number);
-  payload.source_row = payload.source_row ? Number(payload.source_row) : null;
   payload.graduation_year = payload.graduation_year ? Number(payload.graduation_year) : null;
   payload.application_status = payload.application_status || "جديد";
   return payload;
@@ -711,4 +824,7 @@ byId("applicantModal").addEventListener("click", (event) => {
 });
 byId("applicantForm").addEventListener("submit", saveApplicant);
 byId("exportFiltered").addEventListener("click", exportFilteredApplicants);
+byId("exportPdfBtn").addEventListener("click", exportPdf);
+byId("exportXlsxBtn").addEventListener("click", exportXlsx);
 setupAuth();
+refreshIcons();
