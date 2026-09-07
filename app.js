@@ -361,12 +361,20 @@ async function loadData() {
   byId("dataStatus").textContent = "تحميل البيانات";
   const client = getSupabaseClient();
   if (client) {
-    const { data, error } = await client
-      .from("applicants")
-      .select("*")
-      .order("new_number", { ascending: true });
-    if (error) throw error;
-    state.applicants = data || [];
+    const allRows = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1;
+      const { data, error } = await client
+        .from("applicants")
+        .select("*")
+        .order("new_number", { ascending: true })
+        .range(from, to);
+      if (error) throw error;
+      allRows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    state.applicants = allRows;
     state.missing = buildMissingRows(state.applicants);
     state.specialtyReview = buildSpecialtyReviewRows(state.applicants);
     state.mainSummary = buildMainSummary(state.applicants);
