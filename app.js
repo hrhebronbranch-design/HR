@@ -41,6 +41,44 @@ const pageTitles = {
   reports: "التقارير",
 };
 
+const applicationStatuses = ["جديد", "قيد المراجعة", "ناقص", "مقابلة", "مقبول", "مرفوض"];
+const editableFields = [
+  "new_number",
+  "full_name",
+  "phone",
+  "mobile",
+  "national_id",
+  "birth_date",
+  "main_category",
+  "sub_category",
+  "specialty_text",
+  "approved_specialty",
+  "specialty_review_status",
+  "graduation_university",
+  "graduation_year",
+  "original_paper",
+  "source_sheet",
+  "source_row",
+  "application_status",
+  "notes",
+];
+
+let currentApplicant = null;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function toDbValue(value) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+
 function parseCsv(text) {
   const clean = text.replace(/^\uFEFF/, "");
   const rows = [];
@@ -236,16 +274,17 @@ function renderApplicantsTable() {
         : '<span class="badge ok">مكتمل</span>';
       return `
         <tr>
-          <td>${row.new_number}</td>
-          <td>${row.full_name}</td>
-          <td>${row.national_id || ""}</td>
-          <td>${row.mobile || row.phone || ""}</td>
-          <td>${row.main_category}</td>
-          <td>${row.sub_category}</td>
-          <td>${row.approved_specialty}</td>
-          <td>${row.graduation_university || ""}</td>
-          <td>${row.graduation_year || ""}</td>
+          <td>${escapeHtml(row.new_number)}</td>
+          <td>${escapeHtml(row.full_name)}</td>
+          <td>${escapeHtml(row.national_id || "")}</td>
+          <td>${escapeHtml(row.mobile || row.phone || "")}</td>
+          <td>${escapeHtml(row.main_category)}</td>
+          <td>${escapeHtml(row.sub_category)}</td>
+          <td>${escapeHtml(row.approved_specialty)}</td>
+          <td>${escapeHtml(row.graduation_university || "")}</td>
+          <td>${escapeHtml(row.graduation_year || "")}</td>
           <td>${status}</td>
+          <td><button class="row-action" type="button" data-open-applicant="${escapeHtml(row.id || row.new_number)}">استعراض</button></td>
         </tr>
       `;
     })
@@ -259,12 +298,12 @@ function renderMissing() {
     .map(
       (row) => `
         <tr>
-          <td>${row.new_number}</td>
-          <td>${row.full_name}</td>
-          <td>${row.national_id || ""}</td>
-          <td>${row.approved_specialty}</td>
-          <td>${row.missing_fields}</td>
-          <td>${row.source_sheet} / ${row.source_row}</td>
+          <td>${escapeHtml(row.new_number)}</td>
+          <td>${escapeHtml(row.full_name)}</td>
+          <td>${escapeHtml(row.national_id || "")}</td>
+          <td>${escapeHtml(row.approved_specialty)}</td>
+          <td>${escapeHtml(row.missing_fields)}</td>
+          <td>${escapeHtml(row.source_sheet)} / ${escapeHtml(row.source_row)}</td>
         </tr>
       `
     )
@@ -278,11 +317,11 @@ function renderSpecialtyReview() {
     .map(
       (row) => `
         <tr>
-          <td>${row.source_sheet}</td>
-          <td>${row.source_row}</td>
-          <td>${row.full_name}</td>
-          <td>${row.specialty_text}</td>
-          <td>${row.suggested_specialty}</td>
+          <td>${escapeHtml(row.source_sheet)}</td>
+          <td>${escapeHtml(row.source_row)}</td>
+          <td>${escapeHtml(row.full_name)}</td>
+          <td>${escapeHtml(row.specialty_text)}</td>
+          <td>${escapeHtml(row.suggested_specialty)}</td>
         </tr>
       `
     )
@@ -328,9 +367,10 @@ function setupFilters() {
   fillSelect(byId("mainCategoryFilter"), "كل الفئات الرئيسية", uniqueValues(state.applicants, "main_category"));
   fillSelect(byId("subCategoryFilter"), "كل الفئات الفرعية", uniqueValues(state.applicants, "sub_category"));
   fillSelect(byId("specialtyFilter"), "كل التخصصات", uniqueValues(state.applicants, "approved_specialty"));
+  populateDatalists();
   ["searchInput", "mainCategoryFilter", "subCategoryFilter", "specialtyFilter", "missingFilter"].forEach((id) => {
-    byId(id).addEventListener("input", applyApplicantFilters);
-    byId(id).addEventListener("change", applyApplicantFilters);
+    byId(id).oninput = applyApplicantFilters;
+    byId(id).onchange = applyApplicantFilters;
   });
 }
 
@@ -342,6 +382,7 @@ function switchView(viewName) {
     view.classList.toggle("active-view", view.id === viewName);
   });
   byId("pageTitle").textContent = pageTitles[viewName];
+  byId("addApplicantBtn").classList.toggle("hidden", viewName !== "applicants");
 }
 
 function exportFilteredApplicants() {
@@ -355,6 +396,207 @@ function exportFilteredApplicants() {
   link.download = "filtered_applicants.csv";
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function refreshDerivedData() {
+  state.missing = buildMissingRows(state.applicants);
+  state.specialtyReview = buildSpecialtyReviewRows(state.applicants);
+  state.mainSummary = buildMainSummary(state.applicants);
+  setupFilters();
+  applyApplicantFilters();
+  renderDashboard();
+  renderMissing();
+  renderSpecialtyReview();
+  renderReports();
+}
+
+function populateDatalists() {
+  const lists = [
+    ["mainCategoryList", "main_category"],
+    ["subCategoryList", "sub_category"],
+    ["specialtyList", "approved_specialty"],
+  ];
+  lists.forEach(([id, key]) => {
+    byId(id).innerHTML = uniqueValues(state.applicants, key)
+      .map((value) => `<option value="${escapeHtml(value)}"></option>`)
+      .join("");
+  });
+}
+
+function setFormMessage(message, type = "") {
+  const element = byId("formMessage");
+  element.textContent = message;
+  element.className = `form-message ${type}`.trim();
+}
+
+function findApplicant(identifier) {
+  return state.applicants.find((row) => String(row.id || row.new_number) === String(identifier));
+}
+
+function openApplicantModal(applicant = null) {
+  currentApplicant = applicant;
+  const isNew = !applicant;
+  const nextNumber = Math.max(0, ...state.applicants.map((row) => Number(row.new_number) || 0)) + 1;
+  const row = applicant || {
+    new_number: nextNumber,
+    full_name: "",
+    phone: "",
+    mobile: "",
+    national_id: "",
+    birth_date: "",
+    main_category: "",
+    sub_category: "",
+    specialty_text: "",
+    approved_specialty: "",
+    specialty_review_status: "مطابق",
+    graduation_university: "",
+    graduation_year: "",
+    original_paper: "",
+    source_sheet: "إدخال يدوي",
+    source_row: "",
+    application_status: "جديد",
+    notes: "",
+  };
+
+  byId("applicantModalMode").textContent = isNew ? "إضافة متقدم جديد" : "استعراض وتعديل";
+  byId("applicantModalTitle").textContent = isNew ? "متقدم جديد" : row.full_name || "بيانات المتقدم";
+  byId("applicantId").value = row.id || "";
+
+  const form = byId("applicantForm");
+  editableFields.forEach((field) => {
+    const input = form.elements[field];
+    if (input) input.value = row[field] || "";
+  });
+  form.elements.application_status.value = row.application_status || "جديد";
+  byId("cvFileInput").value = "";
+  setFormMessage(isSupabaseEnabled() ? "" : "هذه معاينة محلية. الحفظ ورفع الملفات يحتاجان Supabase.", "");
+  byId("fileList").innerHTML = isNew ? '<span class="muted">احفظ المتقدم أولًا ثم ارفع ملف CV.</span>' : '<span class="muted">تحميل الملفات...</span>';
+  byId("applicantModal").classList.remove("hidden");
+  byId("applicantModal").setAttribute("aria-hidden", "false");
+  if (!isNew) loadApplicantFiles(row.id);
+}
+
+function closeApplicantModal() {
+  byId("applicantModal").classList.add("hidden");
+  byId("applicantModal").setAttribute("aria-hidden", "true");
+  currentApplicant = null;
+}
+
+function collectApplicantPayload() {
+  const form = byId("applicantForm");
+  const payload = {};
+  editableFields.forEach((field) => {
+    const input = form.elements[field];
+    if (!input) return;
+    payload[field] = toDbValue(input.value);
+  });
+  payload.new_number = Number(payload.new_number);
+  payload.source_row = payload.source_row ? Number(payload.source_row) : null;
+  payload.graduation_year = payload.graduation_year ? Number(payload.graduation_year) : null;
+  payload.application_status = payload.application_status || "جديد";
+  return payload;
+}
+
+async function saveApplicant(event) {
+  event.preventDefault();
+  const client = getSupabaseClient();
+  if (!client) {
+    setFormMessage("الحفظ الحقيقي متاح بعد ربط Supabase.", "error");
+    return;
+  }
+
+  const payload = collectApplicantPayload();
+  if (!payload.full_name || !payload.main_category || !payload.sub_category || !payload.approved_specialty) {
+    setFormMessage("الاسم والفئة الرئيسية والفئة الفرعية والتخصص المعتمد حقول مطلوبة.", "error");
+    return;
+  }
+
+  setFormMessage("جاري حفظ البيانات...");
+  let saved;
+  if (currentApplicant?.id) {
+    const { data, error } = await client
+      .from("applicants")
+      .update(payload)
+      .eq("id", currentApplicant.id)
+      .select("*")
+      .single();
+    if (error) {
+      setFormMessage(`تعذر الحفظ: ${error.message}`, "error");
+      return;
+    }
+    saved = data;
+    state.applicants = state.applicants.map((row) => (row.id === saved.id ? saved : row));
+  } else {
+    const { data, error } = await client.from("applicants").insert(payload).select("*").single();
+    if (error) {
+      setFormMessage(`تعذر إضافة المتقدم: ${error.message}`, "error");
+      return;
+    }
+    saved = data;
+    state.applicants.push(saved);
+  }
+
+  currentApplicant = saved;
+  byId("applicantId").value = saved.id;
+  await uploadCvIfSelected(saved);
+  refreshDerivedData();
+  setFormMessage("تم حفظ البيانات بنجاح.", "success");
+  byId("applicantModalTitle").textContent = saved.full_name;
+  loadApplicantFiles(saved.id);
+}
+
+async function uploadCvIfSelected(applicant) {
+  const fileInput = byId("cvFileInput");
+  if (!fileInput.files.length) return;
+  const client = getSupabaseClient();
+  const file = fileInput.files[0];
+  const safeName = file.name.replace(/[^\w.\-\u0600-\u06FF]+/g, "_");
+  const path = `${applicant.id}/${Date.now()}_${safeName}`;
+  const { error: uploadError } = await client.storage.from("applicant-files").upload(path, file, { upsert: false });
+  if (uploadError) {
+    setFormMessage(`تم حفظ البيانات لكن تعذر رفع الملف: ${uploadError.message}`, "error");
+    return;
+  }
+  const { error: insertError } = await client.from("applicant_files").insert({
+    applicant_id: applicant.id,
+    file_type: "cv",
+    file_name: file.name,
+    file_path: path,
+  });
+  if (insertError) {
+    setFormMessage(`تم رفع الملف لكن تعذر تسجيله: ${insertError.message}`, "error");
+  }
+  fileInput.value = "";
+}
+
+async function loadApplicantFiles(applicantId) {
+  const client = getSupabaseClient();
+  if (!client || !applicantId) {
+    byId("fileList").innerHTML = '<span class="muted">لا توجد ملفات محفوظة.</span>';
+    return;
+  }
+  const { data, error } = await client
+    .from("applicant_files")
+    .select("*")
+    .eq("applicant_id", applicantId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    byId("fileList").innerHTML = `<span class="error-text">تعذر تحميل الملفات: ${escapeHtml(error.message)}</span>`;
+    return;
+  }
+  if (!data || data.length === 0) {
+    byId("fileList").innerHTML = '<span class="muted">لا توجد ملفات CV مرفوعة لهذا المتقدم.</span>';
+    return;
+  }
+
+  const items = await Promise.all(
+    data.map(async (file) => {
+      const { data: signed } = await client.storage.from("applicant-files").createSignedUrl(file.file_path, 300);
+      const href = signed?.signedUrl || "#";
+      return `<div class="file-item"><span>${escapeHtml(file.file_name)}</span><a href="${href}" target="_blank" rel="noopener">فتح الملف</a></div>`;
+    })
+  );
+  byId("fileList").innerHTML = items.join("");
 }
 
 async function loadData() {
@@ -454,5 +696,19 @@ document.querySelectorAll(".nav-item").forEach((button) => {
   button.addEventListener("click", () => switchView(button.dataset.view));
 });
 
+byId("applicantsTable").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-open-applicant]");
+  if (!button) return;
+  const applicant = findApplicant(button.dataset.openApplicant);
+  if (applicant) openApplicantModal(applicant);
+});
+
+byId("addApplicantBtn").addEventListener("click", () => openApplicantModal());
+byId("closeApplicantModal").addEventListener("click", closeApplicantModal);
+byId("cancelApplicantBtn").addEventListener("click", closeApplicantModal);
+byId("applicantModal").addEventListener("click", (event) => {
+  if (event.target.id === "applicantModal") closeApplicantModal();
+});
+byId("applicantForm").addEventListener("submit", saveApplicant);
 byId("exportFiltered").addEventListener("click", exportFilteredApplicants);
 setupAuth();

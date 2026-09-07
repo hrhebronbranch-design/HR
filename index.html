@@ -56,6 +56,7 @@
             <h2 id="pageTitle">لوحة التحكم</h2>
           </div>
           <div class="topbar-actions">
+            <button id="addApplicantBtn" class="secondary-action hidden" type="button">إضافة متقدم</button>
             <span id="dataStatus" class="status-pill">تحميل البيانات</span>
           </div>
         </header>
@@ -121,6 +122,7 @@
                   <th>الجامعة</th>
                   <th>سنة التخرج</th>
                   <th>الحالة</th>
+                  <th>إجراء</th>
                 </tr>
               </thead>
               <tbody id="applicantsTable"></tbody>
@@ -219,6 +221,126 @@
         </section>
       </section>
     </main>
+
+    <section id="applicantModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="applicantModalTitle">
+        <header class="modal-header">
+          <div>
+            <p id="applicantModalMode" class="eyebrow">استعراض المتقدم</p>
+            <h2 id="applicantModalTitle">بيانات المتقدم</h2>
+          </div>
+          <button id="closeApplicantModal" class="icon-button" type="button" aria-label="إغلاق">×</button>
+        </header>
+
+        <form id="applicantForm" class="applicant-form">
+          <input id="applicantId" type="hidden" />
+          <div class="form-section">
+            <h3>البيانات الشخصية</h3>
+            <div class="form-grid">
+              <label>الرقم
+                <input name="new_number" type="number" readonly />
+              </label>
+              <label>الاسم الكامل
+                <input name="full_name" required />
+              </label>
+              <label>رقم الهوية
+                <input name="national_id" />
+              </label>
+              <label>تاريخ الميلاد
+                <input name="birth_date" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>الاتصال</h3>
+            <div class="form-grid">
+              <label>الهاتف
+                <input name="phone" />
+              </label>
+              <label>الجوال
+                <input name="mobile" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>البيانات الأكاديمية والتصنيف</h3>
+            <div class="form-grid">
+              <label>الفئة الرئيسية
+                <input name="main_category" list="mainCategoryList" required />
+              </label>
+              <label>الفئة الفرعية
+                <input name="sub_category" list="subCategoryList" required />
+              </label>
+              <label>التخصص المعتمد
+                <input name="approved_specialty" list="specialtyList" required />
+              </label>
+              <label>التخصص المكتوب
+                <input name="specialty_text" />
+              </label>
+              <label>جامعة التخرج
+                <input name="graduation_university" />
+              </label>
+              <label>سنة التخرج
+                <input name="graduation_year" />
+              </label>
+              <label>الورقة الأصلية
+                <input name="original_paper" />
+              </label>
+              <label>حالة مراجعة التخصص
+                <input name="specialty_review_status" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3>حالة الطلب والملفات</h3>
+            <div class="form-grid">
+              <label>حالة الطلب
+                <select name="application_status">
+                  <option value="جديد">جديد</option>
+                  <option value="قيد المراجعة">قيد المراجعة</option>
+                  <option value="ناقص">ناقص</option>
+                  <option value="مقابلة">مقابلة</option>
+                  <option value="مقبول">مقبول</option>
+                  <option value="مرفوض">مرفوض</option>
+                </select>
+              </label>
+              <label>ملف CV
+                <input id="cvFileInput" type="file" accept=".pdf,.doc,.docx" />
+              </label>
+            </div>
+            <div id="fileList" class="file-list"></div>
+          </div>
+
+          <div class="form-section">
+            <h3>المصدر والملاحظات</h3>
+            <div class="form-grid">
+              <label>الشيت الأصلي
+                <input name="source_sheet" readonly />
+              </label>
+              <label>صف المصدر
+                <input name="source_row" readonly />
+              </label>
+            </div>
+            <label>ملاحظات
+              <textarea name="notes" rows="4"></textarea>
+            </label>
+            <p id="formMessage" class="form-message"></p>
+          </div>
+
+          <footer class="modal-actions">
+            <button id="saveApplicantBtn" type="submit">حفظ البيانات</button>
+            <button id="cancelApplicantBtn" type="button" class="secondary-action">إلغاء</button>
+          </footer>
+        </form>
+      </div>
+    </section>
+
+    <datalist id="mainCategoryList"></datalist>
+    <datalist id="subCategoryList"></datalist>
+    <datalist id="specialtyList"></datalist>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./config.js"></script>
