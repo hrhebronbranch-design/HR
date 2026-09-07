@@ -1,0 +1,9 @@
+{
+  "name": "hr-academic-applicants",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "vercel-build": "node build.mjs"
+  }
+}
